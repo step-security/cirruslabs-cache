@@ -38,7 +38,7 @@ outputs:
   cache-hit:
     description: 'A boolean value to indicate an exact match was found for the primary key'
 runs:
-  using: 'node20'
+  using: 'node24'
   main: 'dist/restore/trampoline.mjs'
   post: 'dist/save/trampoline.mjs'
   post-if: "success()"
