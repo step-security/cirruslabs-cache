@@ -1,3 +1,5 @@
+[![StepSecurity Maintained Action](https://raw.githubusercontent.com/step-security/maintained-actions-assets/main/assets/maintained-action-banner.png)](https://docs.stepsecurity.io/actions/stepsecurity-maintained-actions)
+
 # Cirrus Runners Cache action
 
 This utility repository periodically runs a GitHub Action that pulls the latest [actions/cache](https://github.com/actions/cache) repository and applies a rather simple patch to all of its actions:

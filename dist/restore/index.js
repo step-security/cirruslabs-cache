@@ -68614,120 +68614,121 @@ var __importStar = (this && this.__importStar) || function (mod) {
     __setModuleDefault(result, mod);
     return result;
 };
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.restoreRun = exports.restoreOnlyRun = exports.restoreImpl = void 0;
 const cache = __importStar(__nccwpck_require__(5116));
 const core = __importStar(__nccwpck_require__(7484));
 const axios_1 = __importStar(__nccwpck_require__(7269));
+const fs = __importStar(__nccwpck_require__(9896));
 const constants_1 = __nccwpck_require__(7242);
 const stateProvider_1 = __nccwpck_require__(2879);
 const utils = __importStar(__nccwpck_require__(8270));
-function validateSubscription() {
-    var _a;
-    return __awaiter(this, void 0, void 0, function* () {
-        const API_URL = `https://agent.api.stepsecurity.io/v1/github/${process.env.GITHUB_REPOSITORY}/actions/subscription`;
-        try {
-            yield axios_1.default.get(API_URL, { timeout: 3000 });
+async function validateSubscription() {
+    const eventPath = process.env.GITHUB_EVENT_PATH;
+    let repoPrivate;
+    if (eventPath && fs.existsSync(eventPath)) {
+        const eventData = JSON.parse(fs.readFileSync(eventPath, 'utf8'));
+        repoPrivate = eventData?.repository?.private;
+    }
+    const upstream = 'cirruslabs/cache';
+    const action = process.env.GITHUB_ACTION_REPOSITORY;
+    const docsUrl = 'https://docs.stepsecurity.io/actions/stepsecurity-maintained-actions';
+    core.info('');
+    core.info('\u001b[1;36mStepSecurity Maintained Action\u001b[0m');
+    core.info(`Secure drop-in replacement for ${upstream}`);
+    if (repoPrivate === false)
+        core.info('\u001b[32m\u2713 Free for public repositories\u001b[0m');
+    core.info(`\u001b[36mLearn more:\u001b[0m ${docsUrl}`);
+    core.info('');
+    if (repoPrivate === false)
+        return;
+    const serverUrl = process.env.GITHUB_SERVER_URL || 'https://github.com';
+    const body = { action: action || '' };
+    if (serverUrl !== 'https://github.com')
+        body.ghes_server = serverUrl;
+    try {
+        await axios_1.default.post(`https://agent.api.stepsecurity.io/v1/github/${process.env.GITHUB_REPOSITORY}/actions/maintained-actions-subscription`, body, { timeout: 3000 });
+    }
+    catch (error) {
+        if ((0, axios_1.isAxiosError)(error) && error.response?.status === 403) {
+            core.error(`\u001b[1;31mThis action requires a StepSecurity subscription for private repositories.\u001b[0m`);
+            core.error(`\u001b[31mLearn how to enable a subscription: ${docsUrl}\u001b[0m`);
+            process.exit(1);
         }
-        catch (error) {
-            if ((0, axios_1.isAxiosError)(error) && ((_a = error.response) === null || _a === void 0 ? void 0 : _a.status) === 403) {
-                core.error(`Subscription is not valid. Reach out to support@stepsecurity.io`);
-                process.exit(1);
-            }
-            else {
-                core.info(`Timeout or API not reachable. Continuing to next step.`);
-            }
-        }
-    });
+        core.info('Timeout or API not reachable. Continuing to next step.');
+    }
 }
-function restoreImpl(stateProvider, earlyExit) {
-    return __awaiter(this, void 0, void 0, function* () {
-        try {
-            yield validateSubscription();
-            if (!utils.isCacheFeatureAvailable()) {
-                core.setOutput(constants_1.Outputs.CacheHit, "false");
-                return;
-            }
-            // Validate inputs, this can cause task failure
-            if (!utils.isValidEvent()) {
-                utils.logWarning(`Event Validation Error: The event type ${process.env[constants_1.Events.Key]} is not supported because it's not tied to a branch or tag ref.`);
-                return;
-            }
-            const primaryKey = core.getInput(constants_1.Inputs.Key, { required: true });
-            stateProvider.setState(constants_1.State.CachePrimaryKey, primaryKey);
-            const restoreKeys = utils.getInputAsArray(constants_1.Inputs.RestoreKeys);
-            const cachePaths = utils.getInputAsArray(constants_1.Inputs.Path, {
-                required: true
-            });
-            const enableCrossOsArchive = utils.getInputAsBool(constants_1.Inputs.EnableCrossOsArchive);
-            const failOnCacheMiss = utils.getInputAsBool(constants_1.Inputs.FailOnCacheMiss);
-            const lookupOnly = utils.getInputAsBool(constants_1.Inputs.LookupOnly);
-            const cacheKey = yield cache.restoreCache(cachePaths, primaryKey, restoreKeys, { lookupOnly: lookupOnly }, enableCrossOsArchive);
-            if (!cacheKey) {
-                // `cache-hit` is intentionally not set to `false` here to preserve existing behavior
-                // See https://github.com/actions/cache/issues/1466
-                if (failOnCacheMiss) {
-                    throw new Error(`Failed to restore cache entry. Exiting as fail-on-cache-miss is set. Input key: ${primaryKey}`);
-                }
-                core.info(`Cache not found for input keys: ${[
-                    primaryKey,
-                    ...restoreKeys
-                ].join(", ")}`);
-                return;
-            }
-            // Store the matched cache key in states
-            stateProvider.setState(constants_1.State.CacheMatchedKey, cacheKey);
-            const isExactKeyMatch = utils.isExactKeyMatch(core.getInput(constants_1.Inputs.Key, { required: true }), cacheKey);
-            core.setOutput(constants_1.Outputs.CacheHit, isExactKeyMatch.toString());
-            if (lookupOnly) {
-                core.info(`Cache found and can be restored from key: ${cacheKey}`);
-            }
-            else {
-                core.info(`Cache restored from key: ${cacheKey}`);
-            }
-            return cacheKey;
+async function restoreImpl(stateProvider, earlyExit) {
+    try {
+        await validateSubscription();
+        if (!utils.isCacheFeatureAvailable()) {
+            core.setOutput(constants_1.Outputs.CacheHit, "false");
+            return;
         }
-        catch (error) {
-            core.setFailed(error.message);
-            if (earlyExit) {
-                process.exit(1);
-            }
+        // Validate inputs, this can cause task failure
+        if (!utils.isValidEvent()) {
+            utils.logWarning(`Event Validation Error: The event type ${process.env[constants_1.Events.Key]} is not supported because it's not tied to a branch or tag ref.`);
+            return;
         }
-    });
+        const primaryKey = core.getInput(constants_1.Inputs.Key, { required: true });
+        stateProvider.setState(constants_1.State.CachePrimaryKey, primaryKey);
+        const restoreKeys = utils.getInputAsArray(constants_1.Inputs.RestoreKeys);
+        const cachePaths = utils.getInputAsArray(constants_1.Inputs.Path, {
+            required: true
+        });
+        const enableCrossOsArchive = utils.getInputAsBool(constants_1.Inputs.EnableCrossOsArchive);
+        const failOnCacheMiss = utils.getInputAsBool(constants_1.Inputs.FailOnCacheMiss);
+        const lookupOnly = utils.getInputAsBool(constants_1.Inputs.LookupOnly);
+        const cacheKey = await cache.restoreCache(cachePaths, primaryKey, restoreKeys, { lookupOnly: lookupOnly }, enableCrossOsArchive);
+        if (!cacheKey) {
+            // `cache-hit` is intentionally not set to `false` here to preserve existing behavior
+            // See https://github.com/actions/cache/issues/1466
+            if (failOnCacheMiss) {
+                throw new Error(`Failed to restore cache entry. Exiting as fail-on-cache-miss is set. Input key: ${primaryKey}`);
+            }
+            core.info(`Cache not found for input keys: ${[
+                primaryKey,
+                ...restoreKeys
+            ].join(", ")}`);
+            return;
+        }
+        // Store the matched cache key in states
+        stateProvider.setState(constants_1.State.CacheMatchedKey, cacheKey);
+        const isExactKeyMatch = utils.isExactKeyMatch(core.getInput(constants_1.Inputs.Key, { required: true }), cacheKey);
+        core.setOutput(constants_1.Outputs.CacheHit, isExactKeyMatch.toString());
+        if (lookupOnly) {
+            core.info(`Cache found and can be restored from key: ${cacheKey}`);
+        }
+        else {
+            core.info(`Cache restored from key: ${cacheKey}`);
+        }
+        return cacheKey;
+    }
+    catch (error) {
+        core.setFailed(error.message);
+        if (earlyExit) {
+            process.exit(1);
+        }
+    }
 }
 exports.restoreImpl = restoreImpl;
-function run(stateProvider, earlyExit) {
-    return __awaiter(this, void 0, void 0, function* () {
-        yield restoreImpl(stateProvider, earlyExit);
-        // node will stay alive if any promises are not resolved,
-        // which is a possibility if HTTP requests are dangling
-        // due to retries or timeouts. We know that if we got here
-        // that all promises that we care about have successfully
-        // resolved, so simply exit with success.
-        if (earlyExit) {
-            process.exit(0);
-        }
-    });
+async function run(stateProvider, earlyExit) {
+    await restoreImpl(stateProvider, earlyExit);
+    // node will stay alive if any promises are not resolved,
+    // which is a possibility if HTTP requests are dangling
+    // due to retries or timeouts. We know that if we got here
+    // that all promises that we care about have successfully
+    // resolved, so simply exit with success.
+    if (earlyExit) {
+        process.exit(0);
+    }
 }
-function restoreOnlyRun(earlyExit) {
-    return __awaiter(this, void 0, void 0, function* () {
-        yield run(new stateProvider_1.NullStateProvider(), earlyExit);
-    });
+async function restoreOnlyRun(earlyExit) {
+    await run(new stateProvider_1.NullStateProvider(), earlyExit);
 }
 exports.restoreOnlyRun = restoreOnlyRun;
-function restoreRun(earlyExit) {
-    return __awaiter(this, void 0, void 0, function* () {
-        yield run(new stateProvider_1.StateProvider(), earlyExit);
-    });
+async function restoreRun(earlyExit) {
+    await run(new stateProvider_1.StateProvider(), earlyExit);
 }
 exports.restoreRun = restoreRun;
 
@@ -68767,12 +68768,6 @@ exports.NullStateProvider = exports.StateProvider = void 0;
 const core = __importStar(__nccwpck_require__(7484));
 const constants_1 = __nccwpck_require__(7242);
 class StateProviderBase {
-    constructor() {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-empty-function
-        this.setState = (key, value) => { };
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        this.getState = (key) => "";
-    }
     getCacheState() {
         const cacheKey = this.getState(constants_1.State.CacheMatchedKey);
         if (cacheKey) {
@@ -68781,28 +68776,26 @@ class StateProviderBase {
         }
         return undefined;
     }
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-empty-function
+    setState = (key, value) => { };
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    getState = (key) => "";
 }
 class StateProvider extends StateProviderBase {
-    constructor() {
-        super(...arguments);
-        this.setState = core.saveState;
-        this.getState = core.getState;
-    }
+    setState = core.saveState;
+    getState = core.getState;
 }
 exports.StateProvider = StateProvider;
 class NullStateProvider extends StateProviderBase {
-    constructor() {
-        super(...arguments);
-        this.stateToOutputMap = new Map([
-            [constants_1.State.CacheMatchedKey, constants_1.Outputs.CacheMatchedKey],
-            [constants_1.State.CachePrimaryKey, constants_1.Outputs.CachePrimaryKey]
-        ]);
-        this.setState = (key, value) => {
-            core.setOutput(this.stateToOutputMap.get(key), value);
-        };
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        this.getState = (key) => "";
-    }
+    stateToOutputMap = new Map([
+        [constants_1.State.CacheMatchedKey, constants_1.Outputs.CacheMatchedKey],
+        [constants_1.State.CachePrimaryKey, constants_1.Outputs.CachePrimaryKey]
+    ]);
+    setState = (key, value) => {
+        core.setOutput(this.stateToOutputMap.get(key), value);
+    };
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    getState = (key) => "";
 }
 exports.NullStateProvider = NullStateProvider;
 
